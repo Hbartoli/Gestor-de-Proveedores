@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 
 
-# Configuración de la base de datos
+# Configuración de la base de datos local
 def conectar_db():
     conn = sqlite3.connect("proveedores.db", check_same_thread=False)
     cursor = conn.cursor()
@@ -12,7 +12,7 @@ def conectar_db():
         """
         CREATE TABLE IF NOT EXISTS proveedores (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nombre TEXT NOT NULL,
+            nombre TEXT NOT NULL UNIQUE,
             plazo_pago_dias INTEGER NOT NULL,
             dias_entrega INTEGER NOT NULL,
             costo_envio REAL DEFAULT 0.0,
@@ -28,25 +28,31 @@ conn = conectar_db()
 
 
 def registrar_proveedor(nombre, plazo, entrega, envio, calidad):
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        INSERT INTO proveedores (nombre, plazo_pago_dias, dias_entrega, costo_envio, calificacion_calidad)
-        VALUES (?, ?, ?, ?, ?)
-    """,
-        (nombre, plazo, entrega, envio, calidad),
-    )
-    conn.commit()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO proveedores (nombre, plazo_pago_dias, dias_entrega, costo_envio, calificacion_calidad)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(nombre) DO UPDATE SET
+                plazo_pago_dias=excluded.plazo_pago_dias,
+                dias_entrega=excluded.dias_entrega,
+                costo_envio=excluded.costo_envio,
+                calificacion_calidad=excluded.calificacion_calidad
+        """,
+            (nombre, plazo, entrega, envio, calidad),
+        )
+        conn.commit()
+    except Exception as e:
+        st.error(f"Error al guardar en la base de datos: {e}")
 
 
 def obtener_proveedores():
     return pd.read_sql_query("SELECT * FROM proveedores", conn)
 
 
-# Función para convertir el DataFrame a un archivo Excel en memoria
 def convertir_a_excel(df):
     output = io.BytesIO()
-    # Usamos openpyxl como motor para generar el .xlsx
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Proveedores")
     return output.getvalue()
@@ -54,11 +60,18 @@ def convertir_a_excel(df):
 
 # --- INTERFAZ DE STREAMLIT ---
 st.set_page_config(page_title="Gestor de Proveedores", layout="wide")
-st.title("📦 Gestor y Comparador de Proveedores")
+st.title("📦 Gestor Inteligente de Proveedores")
 
-# Crear pestañas para organizar la app
-tab1, tab2 = st.tabs(["➕ Registrar Proveedor", "📊 Comparativa y Análisis"])
+# Pestañas principales
+tab1, tab2, tab3 = st.tabs(
+    [
+        "➕ Registro Individual",
+        "📥 Carga Masiva (Excel)",
+        "📊 Comparativa y Puntuación",
+    ]
+)
 
+# TAB 1: REGISTRO INDIVIDUAL
 with tab1:
     st.header("Agregar Nuevo Proveedor")
     with st.form("formulario_proveedor", clear_on_submit=True):
@@ -89,80 +102,170 @@ with tab1:
                 st.error("El nombre del proveedor no puede estar vacío.")
             else:
                 registrar_proveedor(nombre, plazo, entrega, envio, calidad)
-                st.success(f"Proveedor '{nombre}' guardado correctamente.")
+                st.success(
+                    f"Proveedor '{nombre}' procesado correctamente (Guardado/Actualizado)."
+                )
 
+# TAB 2: CARGA MASIVA DESDE EXCEL
 with tab2:
-    st.header("Análisis de Condiciones")
+    st.header("Subir Archivo de Excel")
+    st.markdown(
+        """
+    **Instrucciones para la carga:**
+    1. Descarga el reporte actual desde la pestaña de análisis para usarlo como plantilla, o crea un archivo con las siguientes columnas exactas:
+    `Proveedor`, `Plazo Pago (Días)`, `Entrega (Días)`, `Costo Envío ($)`, `Calidad (1-5)`
+    2. Modifica los datos o añade nuevas filas.
+    3. Sube el archivo aquí abajo. El sistema añadirá los nuevos y actualizará los existentes si el nombre coincide.
+    """
+    )
+
+    archivo_subido = st.file_uploader(
+        "Elige tu archivo Excel (.xlsx)", type=["xlsx"]
+    )
+
+    if archivo_subido is not None:
+        try:
+            df_subido = pd.read_excel(archivo_subido)
+
+            # Mapeo de columnas esperadas
+            columnas_esperadas = {
+                "Proveedor": "nombre",
+                "Plazo Pago (Días)": "plazo",
+                "Entrega (Días)": "entrega",
+                "Costo Envío ($)": "envio",
+                "Calidad (1-5)": "calidad",
+            }
+
+            # Validar que existan las columnas requeridas
+            if not all(col in df_subido.columns for col in columnas_esperadas):
+                st.error(
+                    "❌ El archivo no tiene el formato correcto de columnas. Descarga la plantilla en la siguiente pestaña."
+                )
+            else:
+                conteo_nuevos = 0
+                for _, fila in df_subido.iterrows():
+                    registrar_proveedor(
+                        nombre=str(fila["Proveedor"]),
+                        plazo=int(fila["Plazo Pago (Días)"]),
+                        entrega=int(fila["Entrega (Días)"]),
+                        envio=float(fila["Costo Envío ($)"]),
+                        calidad=float(fila["Calidad (1-5)"]),
+                    )
+                    conteo_nuevos += 1
+
+                st.success(
+                    f"🎉 ¡Proceso completado! Se procesaron {conteo_nuevos} proveedores exitosamente."
+                )
+        except Exception as e:
+            st.error(f"Ocurrió un error al procesar el archivo: {e}")
+
+# TAB 3: COMPARATIVA Y METRICA PONDERADA
+with tab3:
+    st.header("Análisis Ponderado y Decisiones")
+
     df = obtener_proveedores()
 
     if df.empty:
         st.info("Aún no hay proveedores registrados.")
     else:
-        # Renombrar columnas para la visualización y reporte
+        # Configuración de Pesos de la Métrica Ponderada
+        st.subheader("⚙️ Ajuste de Pesos (Prioridades del Negocio)")
+        st.caption(
+            "Distribuye la importancia de cada variable. La suma debe dar 100%."
+        )
+
+        col_w1, col_w2, col_w3, col_w4 = st.columns(4)
+        with col_w1:
+            w_plazo = st.slider("Importancia Plazo Pago (%)", 0, 100, 30, step=5)
+        with col_w2:
+            w_entrega = st.slider(
+                "Importancia Rapidez Entrega (%)", 0, 100, 30, step=5
+            )
+        with col_w3:
+            w_envio = st.slider("Importancia Menor Costo (%)", 0, 100, 20, step=5)
+        with col_w4:
+            w_calidad = st.slider("Importancia Calidad (%)", 0, 100, 20, step=5)
+
+        suma_pesos = w_plazo + w_entrega + w_envio + w_calidad
+
+        if suma_pesos != 100:
+            st.warning(
+                f"⚠️ Los pesos suman {suma_pesos}%. Ajusta los valores para que sumen exactamente 100%."
+            )
+
+        # Copia para formatear datos
         df_mostrar = df.rename(
             columns={
-                "id": "ID",
                 "nombre": "Proveedor",
                 "plazo_pago_dias": "Plazo Pago (Días)",
                 "dias_entrega": "Entrega (Días)",
                 "costo_envio": "Costo Envío ($)",
                 "calificacion_calidad": "Calidad (1-5)",
             }
+        ).drop(columns=["id"])
+
+        # --- CÁLCULO DE MÉTRICA PONDERADA (NORMALIZACIÓN MIN-MAX) ---
+        # 1. Plazo de pago: Más es mejor
+        max_plazo = (
+            df_mostrar["Plazo Pago (Días)"].max()
+            if df_mostrar["Plazo Pago (Días)"].max() != 0
+            else 1
+        )
+        score_plazo = df_mostrar["Plazo Pago (Días)"] / max_plazo
+
+        # 2. Entrega: Menos es mejor
+        min_entrega = df_mostrar["Entrega (Días)"].min()
+        max_entrega = df_mostrar["Entrega (Días)"].max()
+        if max_entrega == min_entrega:
+            score_entrega = 1.0
+        else:
+            score_entrega = (max_entrega - df_mostrar["Entrega (Días)"]) / (
+                max_entrega - min_entrega
+            )
+
+        # 3. Costo Envío: Menos es mejor
+        min_envio = df_mostrar["Costo Envío ($)"].min()
+        max_envio = df_mostrar["Costo Envío ($)"].max()
+        if max_envio == min_envio:
+            score_envio = 1.0
+        else:
+            score_envio = (max_envio - df_mostrar["Costo Envío ($)"]) / (
+                max_envio - min_envio
+            )
+
+        # 4. Calidad: Más es mejor (escala fija de 1 a 5)
+        score_calidad = df_mostrar["Calidad (1-5)"] / 5.0
+
+        # Cálculo Final de la Puntuación (Escala 1 a 100)
+        df_mostrar["Puntuación Score"] = (
+            (score_plazo * w_plazo)
+            + (score_entrega * w_entrega)
+            + (score_envio * w_envio)
+            + (score_calidad * w_calidad)
+        )
+        df_mostrar["Puntuación Score"] = (
+            df_mostrar["Puntuación Score"].round(1)
         )
 
-        # Filtros de ordenamiento interactivos
-        criterio = st.selectbox(
-            "Ordenar proveedores por:",
-            [
-                "ID (Orden de registro)",
-                "Mejor Financiación (Mayor Plazo de Pago)",
-                "Mayor Rapidez (Menor Tiempo de Entrega)",
-                "Menor Costo de Envío",
-                "Mayor Calidad",
-            ],
+        # Ordenar automáticamente por el mejor Score recalculado
+        df_mostrar = df_mostrar.sort_values(
+            by="Puntuación Score", ascending=False
         )
 
-        if criterio == "Mejor Financiación (Mayor Plazo de Pago)":
-            df_mostrar = df_mostrar.sort_values(
-                by="Plazo Pago (Días)", ascending=False
-            )
-        elif criterio == "Mayor Rapidez (Menor Tiempo de Entrega)":
-            df_mostrar = df_mostrar.sort_values(
-                by="Entrega (Días)", ascending=True
-            )
-        elif criterio == "Menor Costo de Envío":
-            df_mostrar = df_mostrar.sort_values(
-                by="Costo Envío ($)", ascending=True
-            )
-        elif criterio == "Mayor Calidad":
-            df_mostrar = df_mostrar.sort_values(
-                by="Calidad (1-5)", ascending=False
-            )
+        # Botón de Descarga Excel (Mantiene el orden y añade el Score)
+        st.subheader("📋 Tabla Comparativa")
+        datos_excel = convertir_a_excel(df_mostrar)
+        st.download_button(
+            label="📥 Descargar Reporte Actual a Excel",
+            data=datos_excel,
+            file_name="analisis_proveedores.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
 
-        # Zona de acciones: Mostrar tabla y botón de descarga alineados
-        col_tabla, col_btn = st.columns([4, 1])
-
-        with col_btn:
-            st.write("")  # Espacio estético
-            # Generar el archivo binario de Excel basado en el orden actual de la tabla
-            datos_excel = convertir_a_excel(df_mostrar)
-
-            st.download_button(
-                label="📥 Descargar Excel",
-                data=datos_excel,
-                file_name="reporte_proveedores.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-            )
-
-        # Mostrar tabla interactiva ocupando el ancho disponible
+        # Mostrar tabla interactiva
         st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
 
-        # Gráfico comparativo rápido
-        st.subheader("Visualización Comparativa")
-        grafico_eje = st.radio(
-            "Selecciona la métrica para el gráfico:",
-            ["Plazo Pago (Días)", "Entrega (Días)", "Calidad (1-5)"],
-            horizontal=True,
-        )
-        st.bar_chart(data=df_mostrar, x="Proveedor", y=grafico_eje)
+        # Gráfico dinámico basado en la puntuación
+        st.subheader("📈 Ranking de Proveedores")
+        st.bar_chart(data=df_mostrar, x="Proveedor", y="Puntuación Score")
+
