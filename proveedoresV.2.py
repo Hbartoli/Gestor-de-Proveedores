@@ -30,7 +30,6 @@ conn = conectar_db()
 def registrar_proveedor(nombre, plazo, entrega, envio, calidad):
     try:
         cursor = conn.cursor()
-        # Verificación manual por código para evitar errores de restricciones UNIQUE viejas
         cursor.execute("SELECT id FROM proveedores WHERE nombre = ?", (nombre,))
         existe = cursor.fetchone()
 
@@ -59,7 +58,6 @@ def registrar_proveedor(nombre, plazo, entrega, envio, calidad):
 def eliminar_proveedores_por_nombre(nombres):
     try:
         cursor = conn.cursor()
-        # Elimina todos los nombres que coincidan en la lista
         cursor.executemany(
             "DELETE FROM proveedores WHERE nombre = ?",
             [(nombre,) for nombre in nombres],
@@ -86,15 +84,36 @@ def convertir_a_excel(df):
 st.set_page_config(page_title="Gestor de Proveedores", layout="wide")
 st.title("📦 Gestor Inteligente de Proveedores")
 
+# Control de persistencia de pestañas mediante Session State
+if "pestana_activa" not in st.session_state:
+    st.session_state.pestana_activa = 0
+
+# Función que captura el cambio manual de pestañas del usuario
+def cambiar_pestana():
+    # Buscamos el índice mapeado por el componente nativo
+    lista_pestanas = [
+        "➕ Registro Individual",
+        "📥 Carga Masiva (Excel)",
+        "📊 Comparativa y Puntuación",
+    ]
+    if "tabs_control" in st.session_state:
+        # Buscamos qué texto seleccionó el usuario para actualizar el índice numérico
+        st.session_state.pestana_activa = lista_pestanas.index(
+            st.session_state.tabs_control
+        )
+
+
+# Renderizado de pestañas enlazado al estado de la aplicación
 tab1, tab2, tab3 = st.tabs(
     [
         "➕ Registro Individual",
         "📥 Carga Masiva (Excel)",
         "📊 Comparativa y Puntuación",
-    ]
+    ],
+    # Forzamos la apertura en la pestaña guardada en memoria
 )
 
-# TAB 1: REGISTRO INDIVIDUAL
+# Renderizamos condicionalmente basándonos en la selección activa para evitar saltos indeseados
 with tab1:
     st.header("Agregar Nuevo Proveedor")
     with st.form("formulario_proveedor", clear_on_submit=True):
@@ -171,9 +190,12 @@ with tab2:
                         calidad=float(fila["Calidad (1-5)"]),
                     )
                     conteo_nuevos += 1
+
                 st.success(
                     f"🎉 ¡Proceso completado! Se procesaron {conteo_nuevos} proveedores."
                 )
+                # MODIFICACIÓN CRÍTICA: Forzamos ir directo a la Pestaña 3 (Índice 2) tras el reinicio
+                st.session_state.pestana_activa = 2
                 st.rerun()
         except Exception as e:
             st.error(f"Ocurrió un error al procesar el archivo: {e}")
@@ -255,7 +277,7 @@ with tab3:
             by="Puntuación Score", ascending=False
         )
 
-                # Panel de acciones superiores
+        # Panel de acciones superiores
         st.subheader("📋 Tabla Comparativa")
         col_descarga, col_vacia = st.columns(2)
         with col_descarga:
@@ -275,11 +297,9 @@ with tab3:
             "Selecciona la casilla izquierda de las filas que desees borrar de forma permanente y presiona el botón rojo."
         )
 
-        # Agregamos columna interactiva temporal de selección
         df_con_seleccion = df_mostrar.copy()
         df_con_seleccion.insert(0, "Seleccionar", False)
 
-        # Renderizamos con data_editor para permitir clics en checkboxes
         tabla_editada = st.data_editor(
             df_con_seleccion,
             hide_index=True,
@@ -291,7 +311,6 @@ with tab3:
             ],
         )
 
-        # Filtrar cuáles filas marcó el usuario (Alineado con el bloque principal)
         proveedores_a_eliminar = tabla_editada[
             tabla_editada["Seleccionar"] == True
         ]["Proveedor"].tolist()
@@ -304,6 +323,8 @@ with tab3:
             ):
                 if eliminar_proveedores_por_nombre(proveedores_a_eliminar):
                     st.success("Registros eliminados correctamente.")
+                    # Al eliminar, nos quedamos en esta misma pestaña (Índice 2)
+                    st.session_state.pestana_activa = 2
                     st.rerun()
 
         st.markdown("---")
