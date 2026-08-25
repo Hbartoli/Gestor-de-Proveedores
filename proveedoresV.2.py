@@ -292,20 +292,20 @@ with tab3:
         )
 
         # Filtrar cuáles filas marcó el usuario
-proveedores_a_eliminar = tabla_editada[
-tabla_editada["Seleccionar"] == True]
-["Proveedor"].tolist()
+            proveedores_a_eliminar = tabla_editada[
+            tabla_editada["Seleccionar"] == True]
+            ["Proveedor"].tolist()
 
-if proveedores_a_eliminar:
-cant = len(proveedores_a_eliminar)
-if st.button(
-f"⚠️ Eliminar permanentemente ({cant}) registro(s)",
-type="primary",
-):
-if eliminar_proveedores_por_nombre(proveedores_a_eliminar)
-:st.success("Registros eliminados correctamente.")
-st.rerun()
+            if proveedores_a_eliminar:
+                cant = len(proveedores_a_eliminar)
+            if st.button(
+                f"⚠️ Eliminar permanentemente ({cant}) registro(s)",
+                type="primary",
+                ):
+            if eliminar_proveedores_por_nombre(proveedores_a_eliminar)
+                :st.success("Registros eliminados correctamente.")
+                st.rerun()
 
-st.markdown("---")
-st.subheader("📈 Ranking de Proveedores")
-st.bar_chart(data=df_mostrar, x="Proveedor", y="Puntuación Score")
+            st.markdown("---")
+            st.subheader("📈 Ranking de Proveedores")
+            st.bar_chart(data=df_mostrar, x="Proveedor", y="Puntuación Score")
