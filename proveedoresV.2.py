@@ -255,9 +255,9 @@ with tab3:
             by="Puntuación Score", ascending=False
         )
 
-        # Panel de acciones superiores
+                # Panel de acciones superiores
         st.subheader("📋 Tabla Comparativa")
-        col_descarga, col_vacia = st.columns([1, 3])
+        col_descarga, col_vacia = st.columns()
         with col_descarga:
             datos_excel = convertir_a_excel(df_mostrar)
             st.download_button(
@@ -291,21 +291,22 @@ with tab3:
             ],
         )
 
-        # Filtrar cuáles filas marcó el usuario
-            proveedores_a_eliminar = tabla_editada[
-            tabla_editada["Seleccionar"] == True]
-            ["Proveedor"].tolist()
+        # Filtrar cuáles filas marcó el usuario (Alineado con el bloque principal)
+        proveedores_a_eliminar = tabla_editada[
+            tabla_editada["Seleccionar"] == True
+        ]["Proveedor"].tolist()
 
-            if proveedores_a_eliminar:
-                cant = len(proveedores_a_eliminar)
+        if proveedores_a_eliminar:
+            cant = len(proveedores_a_eliminar)
             if st.button(
                 f"⚠️ Eliminar permanentemente ({cant}) registro(s)",
                 type="primary",
-                ):
-            if eliminar_proveedores_por_nombre(proveedores_a_eliminar)
-                :st.success("Registros eliminados correctamente.")
-                st.rerun()
+            ):
+                if eliminar_proveedores_por_nombre(proveedores_a_eliminar):
+                    st.success("Registros eliminados correctamente.")
+                    st.rerun()
 
-            st.markdown("---")
-            st.subheader("📈 Ranking de Proveedores")
-            st.bar_chart(data=df_mostrar, x="Proveedor", y="Puntuación Score")
+        st.markdown("---")
+        st.subheader("📈 Ranking de Proveedores")
+        st.bar_chart(data=df_mostrar, x="Proveedor", y="Puntuación Score")
+
