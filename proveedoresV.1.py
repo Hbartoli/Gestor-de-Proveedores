@@ -30,21 +30,35 @@ conn = conectar_db()
 def registrar_proveedor(nombre, plazo, entrega, envio, calidad):
     try:
         cursor = conn.cursor()
-        cursor.execute(
-            """
-            INSERT INTO proveedores (nombre, plazo_pago_dias, dias_entrega, costo_envio, calificacion_calidad)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(nombre) DO UPDATE SET
-                plazo_pago_dias=excluded.plazo_pago_dias,
-                dias_entrega=excluded.dias_entrega,
-                costo_envio=excluded.costo_envio,
-                calificacion_calidad=excluded.calificacion_calidad
-        """,
-            (nombre, plazo, entrega, envio, calidad),
-        )
+
+        # Verificar si el proveedor ya existe por nombre
+        cursor.execute("SELECT id FROM proveedores WHERE nombre = ?", (nombre,))
+        existe = cursor.fetchone()
+
+        if existe:
+            # Si existe, actualizamos sus datos
+            cursor.execute(
+                """
+                UPDATE proveedores 
+                SET plazo_pago_dias = ?, dias_entrega = ?, costo_envio = ?, calificacion_calidad = ?
+                WHERE nombre = ?
+            """,
+                (plazo, entrega, envio, calidad, nombre),
+            )
+        else:
+            # Si no existe, lo insertamos normalmente
+            cursor.execute(
+                """
+                INSERT INTO proveedores (nombre, plazo_pago_dias, dias_entrega, costo_envio, calificacion_calidad)
+                VALUES (?, ?, ?, ?, ?)
+            """,
+                (nombre, plazo, entrega, envio, calidad),
+            )
+
         conn.commit()
     except Exception as e:
         st.error(f"Error al guardar en la base de datos: {e}")
+
 
 
 def obtener_proveedores():
