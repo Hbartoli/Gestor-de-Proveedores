@@ -1,3 +1,4 @@
+import io
 import sqlite3
 import pandas as pd
 import streamlit as st
@@ -40,6 +41,15 @@ def registrar_proveedor(nombre, plazo, entrega, envio, calidad):
 
 def obtener_proveedores():
     return pd.read_sql_query("SELECT * FROM proveedores", conn)
+
+
+# Función para convertir el DataFrame a un archivo Excel en memoria
+def convertir_a_excel(df):
+    output = io.BytesIO()
+    # Usamos openpyxl como motor para generar el .xlsx
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Proveedores")
+    return output.getvalue()
 
 
 # --- INTERFAZ DE STREAMLIT ---
@@ -88,7 +98,7 @@ with tab2:
     if df.empty:
         st.info("Aún no hay proveedores registrados.")
     else:
-        # Renombrar columnas para la visualización
+        # Renombrar columnas para la visualización y reporte
         df_mostrar = df.rename(
             columns={
                 "id": "ID",
@@ -129,7 +139,23 @@ with tab2:
                 by="Calidad (1-5)", ascending=False
             )
 
-        # Mostrar tabla interactiva
+        # Zona de acciones: Mostrar tabla y botón de descarga alineados
+        col_tabla, col_btn = st.columns([4, 1])
+
+        with col_btn:
+            st.write("")  # Espacio estético
+            # Generar el archivo binario de Excel basado en el orden actual de la tabla
+            datos_excel = convertir_a_excel(df_mostrar)
+
+            st.download_button(
+                label="📥 Descargar Excel",
+                data=datos_excel,
+                file_name="reporte_proveedores.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+
+        # Mostrar tabla interactiva ocupando el ancho disponible
         st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
 
         # Gráfico comparativo rápido
