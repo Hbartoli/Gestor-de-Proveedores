@@ -257,7 +257,7 @@ with tab3:
 
                 # Panel de acciones superiores
         st.subheader("📋 Tabla Comparativa")
-        col_descarga, col_vacia = st.columns()
+        col_descarga, col_vacia = st.columns(2)
         with col_descarga:
             datos_excel = convertir_a_excel(df_mostrar)
             st.download_button(
